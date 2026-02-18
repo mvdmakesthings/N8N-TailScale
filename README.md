@@ -145,6 +145,7 @@ All configuration is stored in a `.env` file (never committed to version control
 | `N8N_ENCRYPTION_KEY` | Yes | — | Encrypts stored credentials in n8n's SQLite database. Generate with `openssl rand -hex 32`. |
 | `N8N_USER_MANAGEMENT_JWT_SECRET` | Yes | — | Signs n8n session tokens. Generate with `openssl rand -hex 32`. |
 | `WEBHOOK_URL` | Yes | — | Full Tailscale HTTPS URL (e.g., `https://n8n-gpu.tail1234.ts.net`). n8n uses this to generate correct webhook callback URLs. |
+| `OLLAMA_DATA_PATH` | No | `/mnt/d/Models/ollama` | Host path for Ollama model storage. Uses a bind mount so models can live on a separate drive. |
 
 > **Important:** If `N8N_ENCRYPTION_KEY` is lost or changed, all saved credentials in n8n become unreadable. Back up your `.env` securely.
 
@@ -169,21 +170,29 @@ The `llama3.1:8b` model is pre-loaded and ready to use with the **AI Agent**, **
 
 ## Managing Models
 
-The Ollama service runs on an air-gapped network and cannot pull models itself. Use the host's Docker CLI or the init service pattern.
+The Ollama service runs on an air-gapped Docker network (`internal: true`) and cannot pull models directly from the internet. A helper script is provided that temporarily connects Ollama to the internet, pulls the requested models, then disconnects it.
 
-### List installed models
-
-```bash
-docker compose exec ollama ollama list
-```
+Models are stored on the host filesystem via a bind mount (default: `/mnt/d/Models/ollama`). Configure the path with `OLLAMA_DATA_PATH` in your `.env`.
 
 ### Pull a new model
 
 ```bash
-docker compose exec ollama ollama pull <model>
+./scripts/pull-model.sh <model>
 ```
 
-> **Note:** `docker compose exec` routes through the Docker daemon, bypassing the internal-only network restriction. This is the intended mechanism for adding models after initial setup.
+Pull multiple models at once:
+
+```bash
+./scripts/pull-model.sh mistral:7b codellama:34b
+```
+
+The script handles the network connect/disconnect cycle automatically and restores isolation even if the pull fails.
+
+### List installed models
+
+```bash
+./scripts/pull-model.sh --list
+```
 
 ### Recommended models for 24 GB VRAM
 
@@ -194,13 +203,14 @@ docker compose exec ollama ollama pull <model>
 | `codellama:34b` | ~18 GB | Code generation and analysis |
 | `deepseek-coder-v2:16b` | ~10 GB | Code-focused, multilingual |
 | `qwen2.5:32b` | ~20 GB | High-quality general-purpose |
+| `qwen3-vl` | ~6 GB | Vision-language, image understanding |
 
 Loaded models share VRAM. Ollama automatically unloads idle models, but keep total active model size under 24 GB to avoid OOM.
 
 ### Remove a model
 
 ```bash
-docker compose exec ollama ollama rm <model>
+docker exec ollama ollama rm <model>
 ```
 
 ---
@@ -350,20 +360,21 @@ docker compose up -d
 docker compose down -v
 ```
 
-> **Warning:** This deletes all n8n workflows, credentials, execution history, and downloaded Ollama models.
+> **Warning:** This deletes n8n workflows, credentials, and execution history. Ollama models are stored on the host filesystem (`OLLAMA_DATA_PATH`) and are **not** affected by `docker compose down -v`.
 
 ### Back up n8n data
 
 ```bash
-docker run --rm -v n8n-tailscale_n8n_data:/data -v "$(pwd)":/backup \
+docker run --rm -v n8n-data:/data -v "$(pwd)":/backup \
   alpine tar czf /backup/n8n-backup-$(date +%Y%m%d).tar.gz -C /data .
 ```
 
 ### Back up Ollama models
 
+Ollama models are stored directly on the host at `OLLAMA_DATA_PATH` (default: `/mnt/d/Models/ollama`). Back them up with standard filesystem tools:
+
 ```bash
-docker run --rm -v n8n-tailscale_ollama_data:/data -v "$(pwd)":/backup \
-  alpine tar czf /backup/ollama-backup-$(date +%Y%m%d).tar.gz -C /data .
+tar czf ollama-backup-$(date +%Y%m%d).tar.gz -C /mnt/d/Models/ollama .
 ```
 
 ---

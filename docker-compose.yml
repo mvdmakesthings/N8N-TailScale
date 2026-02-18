@@ -1,17 +1,23 @@
+name: n8n-gpu
+
 networks:
   frontend:
+    name: frontend
     driver: bridge
   backend:
+    name: backend
     driver: bridge
     internal: true
 
 volumes:
   n8n_data:
-  ollama_data:
+    name: n8n-data
   tailscale_state:
+    name: tailscale-state
 
 services:
   tailscale:
+    container_name: tailscale
     image: tailscale/tailscale:latest
     hostname: ${TS_HOSTNAME:-n8n-gpu}
     environment:
@@ -33,9 +39,10 @@ services:
     restart: unless-stopped
 
   ollama-init:
+    container_name: ollama-init
     image: ollama/ollama:latest
     volumes:
-      - ollama_data:/root/.ollama
+      - ${OLLAMA_DATA_PATH:-/mnt/d/Models/ollama}:/root/.ollama
     networks:
       - frontend
     deploy:
@@ -60,9 +67,10 @@ services:
     restart: "no"
 
   ollama:
+    container_name: ollama
     image: ollama/ollama:latest
     volumes:
-      - ollama_data:/root/.ollama
+      - ${OLLAMA_DATA_PATH:-/mnt/d/Models/ollama}:/root/.ollama
     networks:
       - backend
     deploy:
@@ -78,6 +86,7 @@ services:
     restart: unless-stopped
 
   n8n:
+    container_name: n8n
     image: n8nio/n8n:latest
     environment:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
