@@ -88,6 +88,7 @@ services:
       - n8n_data:/home/node/.n8n
     tmpfs:
       - /tmp
+      - /home/node/.cache
     read_only: true
     security_opt:
       - no-new-privileges:true
