@@ -59,6 +59,7 @@ services:
     tmpfs:
       - /tmp
       - /home/node/.cache
+      - /home/node/.npm
     read_only: true
     security_opt:
       - no-new-privileges:true
