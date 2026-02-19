@@ -20,10 +20,11 @@ Tailscale-exposed n8n with enterprise feature bypass, connecting to the shared O
 |  |                |  Reverse-proxies to n8n:5678      |
 |  +-----+----------+                                   |
 |        |  frontend network (local bridge)              |
-|  +-----+----------+                                   |
-|  |   casper-n8n   |  Workflow engine (sandboxed)       |
-|  |                |  Enterprise features unlocked      |
-|  +-----+----------+                                   |
+|  +-----+----------+     +--------------------+        |
+|  |   casper-n8n   |     | n8n-task-runners   |        |
+|  |                +---->|                    |        |
+|  | Workflow engine |:5679| JS + Python code  |        |
+|  +-----+----------+     +--------------------+        |
 |        |                                              |
 |  Published ports: none                                |
 +--------+----------------------------------------------+
@@ -43,12 +44,13 @@ Tailscale-exposed n8n with enterprise feature bypass, connecting to the shared O
 |---------|-----------|-------|----------|
 | `tailscale` | `tailscale` | `tailscale/tailscale:latest` | `frontend` |
 | `n8n` | `casper-n8n` | `casper-n8n:<N8N_VERSION>` (custom build) | `frontend`, `ollama-net`, `n8n-net` |
+| `n8n-task-runners` | `n8n-task-runners` | `n8nio/runners:<N8N_VERSION>` | `frontend` |
 
 ### Networks
 
 | Network | Type | Purpose |
 |---------|------|---------|
-| `frontend` | local bridge | tailscale <-> n8n communication |
+| `frontend` | local bridge | tailscale <-> n8n, n8n <-> task runners |
 | `ollama-net` | external | n8n -> `casper-ollama` for LLM inference |
 | `n8n-net` | external | shared network with `casper` stack |
 
@@ -91,6 +93,7 @@ cp .env.example .env
 # Generate secrets
 openssl rand -hex 32   # -> N8N_ENCRYPTION_KEY
 openssl rand -hex 32   # -> N8N_USER_MANAGEMENT_JWT_SECRET
+openssl rand -hex 32   # -> N8N_RUNNERS_AUTH_TOKEN
 ```
 
 Create a **reusable** Tailscale auth key at the [admin console](https://login.tailscale.com/admin/settings/keys) and paste it into `TS_AUTHKEY`.
@@ -123,6 +126,8 @@ All configuration lives in `.env` (never committed).
 | `N8N_ENCRYPTION_KEY` | Yes | -- | Encrypts stored credentials. Generate: `openssl rand -hex 32`. |
 | `N8N_USER_MANAGEMENT_JWT_SECRET` | Yes | -- | Signs session tokens. Generate: `openssl rand -hex 32`. |
 | `WEBHOOK_URL` | Yes | -- | Full Tailscale URL (e.g. `https://n8n-gpu.tail1234.ts.net`). |
+| `N8N_RUNNERS_AUTH_TOKEN` | Yes | -- | Shared secret for runner <-> broker auth. Generate: `openssl rand -hex 32`. |
+| `N8N_RUNNERS_MAX_CONCURRENCY` | No | `5` | Max parallel code executions per runner instance. |
 
 > **Warning:** Losing `N8N_ENCRYPTION_KEY` makes all saved n8n credentials unreadable.
 
@@ -180,7 +185,10 @@ docker compose build n8n          # ~15-30 min, needs 8+ GB RAM
 
 1. Set `N8N_VERSION` in `.env`
 2. Rebuild: `docker compose build --no-cache n8n`
-3. Restart: `docker compose up -d`
+3. Pull matching runner image: `docker compose pull n8n-task-runners`
+4. Restart: `docker compose up -d`
+
+> **Note:** The runner image (`n8nio/runners`) must match the n8n version. Both use `${N8N_VERSION}`.
 
 ### Patch failure recovery
 
@@ -203,6 +211,17 @@ Zero published ports -- all ingress flows through Tailscale's WireGuard tunnel.
 | `memory` | `2G` | Prevents resource exhaustion |
 | `cpus` | `2.0` | CPU throttle for runaway workflows |
 
+### Task runner container controls
+
+| Control | Value | Effect |
+|---------|-------|--------|
+| `read_only` | `true` | Immutable root filesystem |
+| `tmpfs` | `/tmp`, `/home/runner/.cache` | Ephemeral scratch only |
+| `cap_drop` | `ALL` | All Linux capabilities removed |
+| `security_opt` | `no-new-privileges` | Blocks setuid/setgid escalation |
+| `memory` | `1G` | Prevents runaway code snippets |
+| `cpus` | `1.0` | CPU throttle for code execution |
+
 Restrict tailnet access further with [Tailscale ACLs](https://login.tailscale.com/admin/acls) -- scope clients to `<TS_HOSTNAME>:443` only.
 
 ---
@@ -217,6 +236,7 @@ docker compose down
 # Logs
 docker compose logs -f              # all services
 docker compose logs -f n8n          # n8n only
+docker compose logs -f n8n-task-runners  # task runner only
 docker compose logs -f tailscale    # tailscale only
 
 # Rebuild n8n after version bump
@@ -227,6 +247,9 @@ docker compose restart n8n
 
 # Update tailscale image
 docker compose pull tailscale && docker compose up -d tailscale
+
+# Update task runner image (must match N8N_VERSION)
+docker compose pull n8n-task-runners && docker compose up -d n8n-task-runners
 
 # Backup n8n data
 docker run --rm -v n8n-data:/data -v "$(pwd)":/backup \
@@ -288,7 +311,7 @@ The `read_only` filesystem requires explicit mounts for all writable paths. If a
 
 ```
 casper-n8n/
-├── docker-compose.yml            # 2 services, 3 networks, 2 volumes
+├── docker-compose.yml            # 3 services, 3 networks, 2 volumes
 ├── .env.example                  # Environment variable template
 ├── .env                          # Local config (git-ignored)
 ├── n8n/

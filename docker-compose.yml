@@ -54,6 +54,10 @@ services:
       - WEBHOOK_URL=${WEBHOOK_URL}
       - N8N_AI_ENABLED=true
       - N8N_DEV_LICENSE_BYPASS=true
+      - N8N_RUNNERS_AUTH_TOKEN=${N8N_RUNNERS_AUTH_TOKEN}
+      - N8N_RUNNERS_BROKER_LISTEN_ADDRESS=0.0.0.0
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_RUNNERS_MODE=external
     volumes:
       - n8n_data:/home/node/.n8n
     tmpfs:
@@ -76,5 +80,32 @@ services:
       - n8n-net
     depends_on:
       tailscale:
+        condition: service_started
+    restart: unless-stopped
+
+  n8n-task-runners:
+    container_name: n8n-task-runners
+    image: n8nio/runners:${N8N_VERSION:-2.8.3}
+    environment:
+      - N8N_RUNNERS_AUTH_TOKEN=${N8N_RUNNERS_AUTH_TOKEN}
+      - N8N_RUNNERS_MAX_CONCURRENCY=${N8N_RUNNERS_MAX_CONCURRENCY:-5}
+      - N8N_RUNNERS_TASK_BROKER_URI=http://n8n:5679
+    tmpfs:
+      - /tmp
+      - /home/runner/.cache
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+    networks:
+      - frontend
+    depends_on:
+      n8n:
         condition: service_started
     restart: unless-stopped

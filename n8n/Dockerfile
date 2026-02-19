@@ -41,10 +41,6 @@ RUN pnpm build
 RUN NODE_ENV=production DOCKER_BUILD=true \
     pnpm --filter=n8n --prod --legacy deploy --no-optional ./compiled
 
-# Also build the JavaScript task runner
-RUN NODE_ENV=production DOCKER_BUILD=true \
-    pnpm --filter=@n8n/task-runner --prod --legacy deploy --no-optional ./dist/task-runner-javascript
-
 # ───────────────────────────────────────────────────
 # Stage 2: Production — minimal runtime image
 # ───────────────────────────────────────────────────
