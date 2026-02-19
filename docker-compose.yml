@@ -6,6 +6,8 @@ networks:
     driver: bridge
   ollama-net:
     external: true
+  n8n-net:
+    external: true
 
 volumes:
   n8n_data:
@@ -38,14 +40,14 @@ services:
     restart: unless-stopped
 
   n8n:
-    container_name: n8n
+    container_name: casper-n8n
     build:
       context: ./n8n
       dockerfile: Dockerfile
       args:
         N8N_VERSION: ${N8N_VERSION:-2.8.3}
         NODE_VERSION: ${NODE_VERSION:-22}
-    image: jlyve-n8n:${N8N_VERSION:-2.8.3}
+    image: casper-n8n:${N8N_VERSION:-2.8.3}
     environment:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET}
@@ -70,6 +72,7 @@ services:
     networks:
       - frontend
       - ollama-net
+      - n8n-net
     depends_on:
       tailscale:
         condition: service_started
