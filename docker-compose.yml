@@ -57,6 +57,7 @@ services:
       - N8N_RUNNERS_AUTH_TOKEN=${N8N_RUNNERS_AUTH_TOKEN}
       - N8N_RUNNERS_BROKER_LISTEN_ADDRESS=0.0.0.0
       - N8N_RUNNERS_MODE=external
+      - N8N_PUBLIC_API_DISABLED=${N8N_PUBLIC_API_DISABLED:-true}
     volumes:
       - n8n_data:/home/node/.n8n
     tmpfs:
